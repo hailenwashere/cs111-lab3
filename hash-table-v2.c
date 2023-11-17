@@ -20,6 +20,8 @@ struct hash_table_entry {
 };
 
 struct hash_table_v2 {
+	pthread_mutex_t lock1;
+	pthread_mutex_t lock2;
 	struct hash_table_entry entries[HASH_TABLE_CAPACITY];
 };
 
@@ -30,6 +32,16 @@ struct hash_table_v2 *hash_table_v2_create()
 	for (size_t i = 0; i < HASH_TABLE_CAPACITY; ++i) {
 		struct hash_table_entry *entry = &hash_table->entries[i];
 		SLIST_INIT(&entry->list_head);
+	}
+	int err = pthread_mutex_init(&hash_table->lock1, NULL);
+	if (err != 0)
+	{
+		exit(err);
+	}
+	err = pthread_mutex_init(&hash_table->lock2, NULL)
+	if (err != 0)
+	{
+		exit(err);
 	}
 	return hash_table;
 }
@@ -74,18 +86,24 @@ void hash_table_v2_add_entry(struct hash_table_v2 *hash_table,
 {
 	struct hash_table_entry *hash_table_entry = get_hash_table_entry(hash_table, key);
 	struct list_head *list_head = &hash_table_entry->list_head;
-	struct list_entry *list_entry = get_list_entry(hash_table, key, list_head);
+	struct list_entry *list_entry = get_list_entry(hash_table, key, list_head); // returns list entry w same key
 
-	/* Update the value if it already exists */
+	/* if key alr in LL of this hash table entry, update value*/ 
 	if (list_entry != NULL) {
 		list_entry->value = value;
 		return;
 	}
 
-	list_entry = calloc(1, sizeof(struct list_entry));
+	// we don't need to lock these since this is just creating the new entry, not changing the hashtable
+	list_entry = calloc(1, sizeof(struct list_entry)); //thread sage
 	list_entry->key = key;
 	list_entry->value = value;
+
+	// we updated head ptr and change the hashtable here, so we need to lock this
+	// so that the next insert_head does so w the new head ptr
+	pthread_mutex_lock(&(hash_table->lock2));
 	SLIST_INSERT_HEAD(list_head, list_entry, pointers);
+	pthread_mutex_unlock(&(hash_table->lock2));
 }
 
 uint32_t hash_table_v2_get_value(struct hash_table_v2 *hash_table,
@@ -100,6 +118,9 @@ uint32_t hash_table_v2_get_value(struct hash_table_v2 *hash_table,
 
 void hash_table_v2_destroy(struct hash_table_v2 *hash_table)
 {
+	pthread_mutex_destroy(&(hash_table->lock1));
+	pthread_mutex_destroy(&(hash_table->lock2));
+
 	for (size_t i = 0; i < HASH_TABLE_CAPACITY; ++i) {
 		struct hash_table_entry *entry = &hash_table->entries[i];
 		struct list_head *list_head = &entry->list_head;
