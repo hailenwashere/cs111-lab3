@@ -17,11 +17,11 @@ SLIST_HEAD(list_head, list_entry);
 
 struct hash_table_entry {
 	struct list_head list_head;
+	pthread_mutex_t lock;
 };
 
 struct hash_table_v2 {
-	pthread_mutex_t lock1;
-	pthread_mutex_t lock2;
+	// pthread_mutex_t lock;
 	struct hash_table_entry entries[HASH_TABLE_CAPACITY];
 };
 
@@ -31,18 +31,24 @@ struct hash_table_v2 *hash_table_v2_create()
 	assert(hash_table != NULL);
 	for (size_t i = 0; i < HASH_TABLE_CAPACITY; ++i) {
 		struct hash_table_entry *entry = &hash_table->entries[i];
+
+		// V2.2
+		int err = pthread_mutex_init(&entry->lock, NULL);
+		if (err != 0)
+		{
+			exit(err);
+		}
+
 		SLIST_INIT(&entry->list_head);
 	}
-	int err = pthread_mutex_init(&hash_table->lock1, NULL);
-	if (err != 0)
-	{
-		exit(err);
-	}
-	err = pthread_mutex_init(&hash_table->lock2, NULL)
-	if (err != 0)
-	{
-		exit(err);
-	}
+
+	// V2.1
+	// int err = pthread_mutex_init(&hash_table->lock, NULL);
+	// if (err != 0)
+	// {
+	// 	exit(err);
+	// }
+	
 	return hash_table;
 }
 
@@ -84,8 +90,10 @@ void hash_table_v2_add_entry(struct hash_table_v2 *hash_table,
                              const char *key,
                              uint32_t value)
 {
-	struct hash_table_entry *hash_table_entry = get_hash_table_entry(hash_table, key);
-	struct list_head *list_head = &hash_table_entry->list_head;
+	// we don't need to lock these since we don't change these values - the hash table will always have the same
+	// hash_table_entry's and they will each have a list_head
+	struct hash_table_entry *hash_table_entry = get_hash_table_entry(hash_table, key); // get hash entry at the hashed key index 
+	struct list_head *list_head = &hash_table_entry->list_head; // gets the head of the table entry LL
 	struct list_entry *list_entry = get_list_entry(hash_table, key, list_head); // returns list entry w same key
 
 	/* if key alr in LL of this hash table entry, update value*/ 
@@ -95,15 +103,21 @@ void hash_table_v2_add_entry(struct hash_table_v2 *hash_table,
 	}
 
 	// we don't need to lock these since this is just creating the new entry, not changing the hashtable
-	list_entry = calloc(1, sizeof(struct list_entry)); //thread sage
+	list_entry = calloc(1, sizeof(struct list_entry)); //thread safe
 	list_entry->key = key;
 	list_entry->value = value;
 
 	// we updated head ptr and change the hashtable here, so we need to lock this
 	// so that the next insert_head does so w the new head ptr
-	pthread_mutex_lock(&(hash_table->lock2));
+	// V2.1
+	// pthread_mutex_lock(&(hash_table->lock)); // added this
+	// SLIST_INSERT_HEAD(list_head, list_entry, pointers);
+	// pthread_mutex_unlock(&(hash_table->lock)); // added this
+
+	// V2.2
+	pthread_mutex_lock(&(hash_table_entry->lock)); // added this
 	SLIST_INSERT_HEAD(list_head, list_entry, pointers);
-	pthread_mutex_unlock(&(hash_table->lock2));
+	pthread_mutex_unlock(&(hash_table_entry->lock)); // added this
 }
 
 uint32_t hash_table_v2_get_value(struct hash_table_v2 *hash_table,
@@ -118,11 +132,21 @@ uint32_t hash_table_v2_get_value(struct hash_table_v2 *hash_table,
 
 void hash_table_v2_destroy(struct hash_table_v2 *hash_table)
 {
-	pthread_mutex_destroy(&(hash_table->lock1));
-	pthread_mutex_destroy(&(hash_table->lock2));
+	// V2.1
+	// int err = pthread_mutex_destroy(&(hash_table->lock));
+	// if (err != 0)
+	// {
+	// 	exit(err);
+	// }
 
 	for (size_t i = 0; i < HASH_TABLE_CAPACITY; ++i) {
 		struct hash_table_entry *entry = &hash_table->entries[i];
+		// V2.2
+		int err = pthread_mutex_destroy(&(entry->lock));
+		if (err != 0)
+		{
+			exit(err);
+		}
 		struct list_head *list_head = &entry->list_head;
 		struct list_entry *list_entry = NULL;
 		while (!SLIST_EMPTY(list_head)) {
